@@ -62,7 +62,7 @@ def get_gmail_service():
             params = st.query_params
             if "code" in params:
                 try:
-                    flow.fetch_token(code=params["code"])
+                    flow.fetch_token(code=params["code"], include_client_id=True)
                 except Exception as e:
                     st.error(f"OAuth error: {e}")
                     st.stop()  
