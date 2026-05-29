@@ -39,24 +39,35 @@ safe_mode = st.toggle("Safe Mode (won't mark emails as read)", value=True)
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 def get_gmail_service():
-    token_json = os.environ.get("GMAIL_TOKEN")
-    if not token_json:
-        st.error("GMAIL_TOKEN not set in environment variables.")
-        st.stop()
-    creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
-    if not creds.valid:
+    # Already logged in this session
+    if "token" in st.session_state and st.session_state.token:
+        creds = Credentials.from_authorized_user_info(st.session_state.token, SCOPES)
+        if creds.valid:
+            return build("gmail", "v1", credentials=creds)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-    return build("gmail", "v1", credentials=creds)
+            st.session_state.token = json.loads(creds.to_json())
+            return build("gmail", "v1", credentials=creds)
 
+    # Returning from Google login
     params = st.query_params
     if "code" in params:
-        if "flow_state" not in st.session_state:
-            st.error("Session expired, please try again.")
-            st.stop()
-        flow = st.session_state.flow_state
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [os.environ.get("REDIRECT_URI")]
+                }
+            },
+            scopes=SCOPES,
+            redirect_uri=os.environ.get("REDIRECT_URI")
+        )
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
         try:
-            flow.fetch_token(code=params["code"])
+            flow.fetch_token(authorization_response=os.environ.get("REDIRECT_URI") + "?" + "&".join([f"{k}={v}" for k, v in params.items()]))
             creds = flow.credentials
             st.session_state.token = json.loads(creds.to_json())
             st.query_params.clear()
@@ -65,6 +76,7 @@ def get_gmail_service():
             st.error(f"OAuth error: {e}")
             st.stop()
 
+    # Not logged in — show login button
     flow = Flow.from_client_config(
         {
             "web": {
@@ -79,8 +91,8 @@ def get_gmail_service():
         redirect_uri=os.environ.get("REDIRECT_URI")
     )
     auth_url, _ = flow.authorization_url(prompt="consent")
-    st.session_state.flow_state = flow
-    st.markdown(f"[Click here to connect your Gmail]({auth_url})")
+    st.markdown(f"### 👋 Connect your Gmail to get started")
+    st.link_button("Connect Gmail", auth_url)
     st.stop()
 
 
