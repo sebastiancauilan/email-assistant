@@ -39,14 +39,15 @@ safe_mode = st.toggle("Safe Mode (won't mark emails as read)", value=True)
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 def get_gmail_service():
-    if "token" in st.session_state and st.session_state.token:
-        creds = Credentials.from_authorized_user_info(st.session_state.token, SCOPES)
-        if creds.valid:
-            return build("gmail", "v1", credentials=creds)
+    token_json = os.environ.get("GMAIL_TOKEN")
+    if not token_json:
+        st.error("GMAIL_TOKEN not set in environment variables.")
+        st.stop()
+    creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    if not creds.valid:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            st.session_state.token = json.loads(creds.to_json())
-            return build("gmail", "v1", credentials=creds)
+    return build("gmail", "v1", credentials=creds)
 
     params = st.query_params
     if "code" in params:
