@@ -61,8 +61,11 @@ def get_gmail_service():
             )
             params = st.query_params
             if "code" in params:
-                flow.fetch_token(code=params["code"])
-                creds = flow.credentials
+                try:
+                    flow.fetch_token(code=params["code"])
+                except Exception as e:
+                    st.error(f"OAuth error: {e}")
+                    st.stop()  
             else:
                 auth_url, _ = flow.authorization_url(prompt="consent")
                 st.markdown(f"[Click here to connect your Gmail]({auth_url})")
