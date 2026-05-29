@@ -6,6 +6,7 @@ import pickle
 from email.mime.text import MIMEText
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
+from streamlit_oauth import OAuth2Component
 
 from openai import OpenAI
 from google.auth.transport.requests import Request
@@ -38,62 +39,30 @@ safe_mode = st.toggle("Safe Mode (won't mark emails as read)", value=True)
 
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
+oauth2 = OAuth2Component(
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    "https://accounts.google.com/o/oauth2/auth",
+    "https://oauth2.googleapis.com/token",
+    "https://oauth2.googleapis.com/token",
+    "https://oauth2.googleapis.com/revoke",
+)
+
 def get_gmail_service():
-    # Already logged in this session
-    if "token" in st.session_state and st.session_state.token:
-        creds = Credentials.from_authorized_user_info(st.session_state.token, SCOPES)
-        if creds.valid:
-            return build("gmail", "v1", credentials=creds)
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            st.session_state.token = json.loads(creds.to_json())
-            return build("gmail", "v1", credentials=creds)
-
-    # Returning from Google login
-    params = st.query_params
-    if "code" in params:
-        flow = Flow.from_client_config(
-            {
-                "web": {
-                    "client_id": GOOGLE_CLIENT_ID,
-                    "client_secret": GOOGLE_CLIENT_SECRET,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [os.environ.get("REDIRECT_URI")]
-                }
-            },
-            scopes=SCOPES,
-            redirect_uri=os.environ.get("REDIRECT_URI")
-        )
-        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-        try:
-            flow.fetch_token(authorization_response=os.environ.get("REDIRECT_URI") + "?" + "&".join([f"{k}={v}" for k, v in params.items()]))
-            creds = flow.credentials
-            st.session_state.token = json.loads(creds.to_json())
-            st.query_params.clear()
-            return build("gmail", "v1", credentials=creds)
-        except Exception as e:
-            st.error(f"OAuth error: {e}")
-            st.stop()
-
-    # Not logged in — show login button
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [os.environ.get("REDIRECT_URI")]
-            }
-        },
+    token = st.session_state.token
+    creds = Credentials(
+        token=token["access_token"],
+        refresh_token=token.get("refresh_token"),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
         scopes=SCOPES,
-        redirect_uri=os.environ.get("REDIRECT_URI")
     )
-    auth_url, _ = flow.authorization_url(prompt="consent")
-    st.markdown(f"### 👋 Connect your Gmail to get started")
-    st.link_button("Connect Gmail", auth_url)
-    st.stop()
+    if not creds.valid and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        st.session_state.token["access_token"] = creds.token
+    return build("gmail", "v1", credentials=creds)
+
 
 
 # ── EMAIL PARSING ─────────────────────────────────────────────────────────────
@@ -144,7 +113,17 @@ def create_draft(service, to, subject, body):
         body={"message": {"raw": raw}}
     ).execute()
 
-
+if "token" not in st.session_state:
+    result = oauth2.authorize_button(
+        "Connect Gmail",
+        os.environ.get("REDIRECT_URI"),
+        " ".join(SCOPES),
+    )
+    if result and "token" in result:
+        st.session_state.token = result["token"]
+        st.rerun()
+    else:
+        st.stop()
 # ── SCAN BUTTON ───────────────────────────────────────────────────────────────
 if st.button("Scan Inbox"):
     st.session_state.emails = []
