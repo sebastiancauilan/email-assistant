@@ -5,6 +5,7 @@ import os
 import pickle
 from email.mime.text import MIMEText
 from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
 
 from openai import OpenAI
 from google.auth.transport.requests import Request
@@ -38,41 +39,48 @@ safe_mode = st.toggle("Safe Mode (won't mark emails as read)", value=True)
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 def get_gmail_service():
-    creds = None
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as f:
-            creds = pickle.load(f)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    if "token" in st.session_state and st.session_state.token:
+        creds = Credentials.from_authorized_user_info(st.session_state.token, SCOPES)
+        if creds.valid:
+            return build("gmail", "v1", credentials=creds)
+        if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-        else:
-            flow = Flow.from_client_config(
-                {
-                    "web": {
-                        "client_id": GOOGLE_CLIENT_ID,
-                        "client_secret": GOOGLE_CLIENT_SECRET,
-                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "token_uri": "https://oauth2.googleapis.com/token",
-                        "redirect_uris": [os.environ.get("REDIRECT_URI")]
-                    }
-                },
-                scopes=SCOPES,
-                redirect_uri=os.environ.get("REDIRECT_URI")
-            )
-            params = st.query_params
-            if "code" in params:
-                try:
-                    flow.fetch_token(code=params["code"], include_client_id=True)
-                except Exception as e:
-                    st.error(f"OAuth error: {e}")
-                    st.stop()  
-            else:
-                auth_url, _ = flow.authorization_url(prompt="consent")
-                st.markdown(f"[Click here to connect your Gmail]({auth_url})")
-                st.stop()
-        with open("token.pickle", "wb") as f:
-            pickle.dump(creds, f)
-    return build("gmail", "v1", credentials=creds)
+            st.session_state.token = json.loads(creds.to_json())
+            return build("gmail", "v1", credentials=creds)
+
+    params = st.query_params
+    if "code" in params:
+        if "flow_state" not in st.session_state:
+            st.error("Session expired, please try again.")
+            st.stop()
+        flow = st.session_state.flow_state
+        try:
+            flow.fetch_token(code=params["code"])
+            creds = flow.credentials
+            st.session_state.token = json.loads(creds.to_json())
+            st.query_params.clear()
+            return build("gmail", "v1", credentials=creds)
+        except Exception as e:
+            st.error(f"OAuth error: {e}")
+            st.stop()
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [os.environ.get("REDIRECT_URI")]
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=os.environ.get("REDIRECT_URI")
+    )
+    auth_url, _ = flow.authorization_url(prompt="consent")
+    st.session_state.flow_state = flow
+    st.markdown(f"[Click here to connect your Gmail]({auth_url})")
+    st.stop()
 
 
 # ── EMAIL PARSING ─────────────────────────────────────────────────────────────
