@@ -15,9 +15,11 @@ st.title("AI Email Assistant")
 st.caption("Scans unread emails, drafts AI replies — approve before anything sends.")
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-OPENAI_API_KEY       = "sk-..."
-GOOGLE_CLIENT_ID     = "your-google-client-id"
-GOOGLE_CLIENT_SECRET = "your-google-client-secret"
+import os
+
+OPENAI_API_KEY       = os.environ.get("OPENAI_API_KEY")
+GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
 MAX_EMAILS     = 5
 SCOPES         = ["https://www.googleapis.com/auth/gmail.modify"]
