@@ -1,1 +1,1 @@
-web: streamlit run "app_fixed (1).py" --server.port=$PORT --server.address=0.0.0.0
+web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
