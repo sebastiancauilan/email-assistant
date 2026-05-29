@@ -4,6 +4,7 @@ import base64
 import os
 import pickle
 from email.mime.text import MIMEText
+from google_auth_oauthlib.flow import Flow
 
 from openai import OpenAI
 from google.auth.transport.requests import Request
@@ -45,19 +46,27 @@ def get_gmail_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_config(
+            flow = Flow.from_client_config(
                 {
-                    "installed": {
+                    "web": {
                         "client_id": GOOGLE_CLIENT_ID,
                         "client_secret": GOOGLE_CLIENT_SECRET,
                         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                         "token_uri": "https://oauth2.googleapis.com/token",
-                        "redirect_uris": ["http://localhost"]
+                        "redirect_uris": [os.environ.get("REDIRECT_URI")]
                     }
                 },
-                SCOPES
+                scopes=SCOPES,
+                redirect_uri=os.environ.get("REDIRECT_URI")
             )
-            creds = flow.run_local_server(port=0)
+            params = st.query_params
+            if "code" in params:
+                flow.fetch_token(code=params["code"])
+                creds = flow.credentials
+            else:
+                auth_url, _ = flow.authorization_url(prompt="consent")
+                st.markdown(f"[Click here to connect your Gmail]({auth_url})")
+                st.stop()
         with open("token.pickle", "wb") as f:
             pickle.dump(creds, f)
     return build("gmail", "v1", credentials=creds)
