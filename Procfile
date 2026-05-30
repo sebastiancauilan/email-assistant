@@ -1,1 +1,1 @@
-web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+web: pip install streamlit-oauth && streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
